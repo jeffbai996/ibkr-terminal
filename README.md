@@ -101,7 +101,7 @@ Open Claude Code and talk to your portfolio:
 > What's MU trading at?
 > What happens to my margin if I sell 1000 MU?
 > If the market drops 5%, am I safe?
-> Show me 蛋总's positions (account U7654321)
+> Show me my client's positions (account U7654321)
 > What's my CAD vs USD exposure?
 ```
 

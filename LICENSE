@@ -1,13 +1,41 @@
+PROPRIETARY SOFTWARE LICENSE
+
 Copyright (c) 2026 Jeff Bai. All rights reserved.
 
-This software and associated documentation files (the "Software") are the
-proprietary property of Jeff Bai. No part of the Software may be used, copied,
-modified, merged, published, distributed, sublicensed, or sold without the
-prior written permission of the copyright holder.
+NOTICE: This software and all associated documentation, source code, object
+code, algorithms, tool definitions, data structures, and design specifications
+(collectively, the "Software") constitute proprietary and confidential trade
+secrets of Jeff Bai (the "Owner").
 
-The Software is provided "as is", without warranty of any kind, express or
-implied, including but not limited to the warranties of merchantability,
-fitness for a particular purpose, and noninfringement. In no event shall the
-copyright holder be liable for any claim, damages, or other liability, whether
-in an action of contract, tort, or otherwise, arising from, out of, or in
-connection with the Software or the use or other dealings in the Software.
+RESTRICTIONS: No license, right, or interest in the Software is granted to any
+person or entity, whether by implication, estoppel, or otherwise. Without the
+prior express written consent of the Owner, you may NOT:
+
+  (a) use, execute, or deploy the Software for any purpose;
+  (b) copy, reproduce, or duplicate the Software in whole or in part;
+  (c) modify, adapt, translate, reverse engineer, decompile, or disassemble
+      the Software;
+  (d) distribute, sublicense, lease, rent, loan, or otherwise transfer the
+      Software to any third party;
+  (e) create derivative works based on the Software;
+  (f) incorporate any portion of the Software into other software or systems;
+  (g) use the Software to develop competing products or services.
+
+ENFORCEMENT: Unauthorized use, reproduction, or distribution of the Software
+may result in civil liability and criminal penalties under applicable copyright
+law, trade secret law, and other intellectual property statutes, including but
+not limited to the U.S. Copyright Act (17 U.S.C. § 101 et seq.), the Digital
+Millennium Copyright Act (17 U.S.C. § 1201 et seq.), the Computer Fraud and
+Abuse Act (18 U.S.C. § 1030), the Canadian Copyright Act (R.S.C., 1985,
+c. C-42), and equivalent laws in other jurisdictions. The Owner reserves the
+right to pursue all available legal and equitable remedies, including injunctive
+relief and recovery of statutory damages, attorney's fees, and costs.
+
+DISCLAIMER OF WARRANTY: THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For licensing inquiries, contact: jeff@jeffbai.com

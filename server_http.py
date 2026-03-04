@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     # Disable DNS rebinding protection — requests come through Tailscale
     # Funnel with Host: fragserv.tailab4af9.ts.net, not localhost
-    mcp._transport_security = TransportSecuritySettings(
+    mcp.settings.transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=False,
     )
 

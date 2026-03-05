@@ -6,5 +6,5 @@ python-dotenv>=1.0.0    # Load .env files
 nest_asyncio>=1.6.0     # Allows nested event loops (ib_insync inside FastMCP's loop)
 uvicorn>=0.30.0         # ASGI server for streamable-http transport (server_http.py)
 
-# Dev / testing
-pytest>=8.0.0
+# Core package (private — requires access to jeffbai996/ibkr-terminal-core)
+ibkr-terminal-core @ git+ssh://git@github.com/jeffbai996/ibkr-terminal-core.git

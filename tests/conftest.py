@@ -168,3 +168,17 @@ def _fast_sleep():
     """Replace asyncio.sleep with a no-op for all tests."""
     with patch("asyncio.sleep", new_callable=AsyncMock):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_response_cache():
+    """Clear the tool response cache between tests.
+
+    Without this, a successful tool call in one test populates the cache,
+    and error tests in subsequent tests get cached data instead of error
+    messages — which is correct runtime behavior but confuses test assertions.
+    """
+    from core.cache import _response_cache
+    _response_cache.clear()
+    yield
+    _response_cache.clear()

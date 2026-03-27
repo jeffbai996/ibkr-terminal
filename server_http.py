@@ -39,6 +39,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import NoReturn
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -68,15 +69,13 @@ _ib_lock = asyncio.Lock()
 
 
 async def _connect_ib() -> tuple[IB, str]:
-    """Connect to primary IB Gateway. Disconnects stale connection first."""
-    global _ib, _health
+    """Connect to primary IB Gateway.
 
-    # Clean up stale connection before creating new one
-    if _ib is not None:
-        try:
-            _ib.disconnect()
-        except Exception:
-            pass
+    Keeps the old IB instance alive until the new one connects, so
+    ib_insync's internal subscription cache (positions, account data)
+    survives failed reconnection attempts.
+    """
+    global _ib, _health
 
     ib = IB()
     client_id = IB_CLIENT_ID + 5000 + (os.getpid() % 5000)
@@ -91,6 +90,13 @@ async def _connect_ib() -> tuple[IB, str]:
         timeout=IB_TIMEOUT,
         readonly=IB_READONLY,
     )
+
+    # New connection succeeded — now safe to clean up old one
+    if _ib is not None:
+        try:
+            _ib.disconnect()
+        except Exception:
+            pass
 
     # Attach health monitoring
     _health = ConnectionHealth()
@@ -114,26 +120,33 @@ async def _connect_ib2() -> tuple[IB | None, str]:
     if not IB_PORT_2:
         return None, ""
 
-    # Clean up stale connection
-    if _ib2 is not None:
-        try:
-            _ib2.disconnect()
-        except Exception:
-            pass
-
     ib2 = IB()
     client_id_2 = IB_CLIENT_ID_2 + 5000 + (os.getpid() % 5000)
 
     try:
         logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
                      f"(clientId={client_id_2})...")
-        await ib2.connectAsync(
-            host=IB_HOST,
-            port=IB_PORT_2,
-            clientId=client_id_2,
-            timeout=IB_TIMEOUT,
-            readonly=IB_READONLY,
+        # Hard 15s cap — ib_insync's internal order sync (reqOpenOrders +
+        # reqCompletedOrders) can hang 30-40s if the gateway accepts TCP
+        # but isn't responding to requests (e.g. TWS session locked).
+        # The IB_TIMEOUT param only covers the TCP handshake, not the sync.
+        await asyncio.wait_for(
+            ib2.connectAsync(
+                host=IB_HOST,
+                port=IB_PORT_2,
+                clientId=client_id_2,
+                timeout=IB_TIMEOUT,
+                readonly=IB_READONLY,
+            ),
+            timeout=15,
         )
+
+        # New connection succeeded — clean up old one
+        if _ib2 is not None:
+            try:
+                _ib2.disconnect()
+            except Exception:
+                pass
 
         # Attach health monitoring
         _health2 = ConnectionHealth()
@@ -146,9 +159,73 @@ async def _connect_ib2() -> tuple[IB | None, str]:
                     f"Secondary: ...{secondary[-4:] if secondary else 'auto'}")
         return ib2, secondary
     except Exception as e:
-        logger.warning(f"Failed to connect to secondary IB Gateway on port {IB_PORT_2}: {e}. "
+        # Clean up partial connection (TCP may be open even if order sync timed out)
+        try:
+            ib2.disconnect()
+        except Exception:
+            pass
+        msg = "timed out (15s)" if isinstance(e, asyncio.TimeoutError) else str(e)
+        logger.warning(f"Failed to connect to secondary IB Gateway on port {IB_PORT_2}: {msg}. "
                        "Continuing with primary only.")
         return None, ""
+
+
+_reconnect_task: asyncio.Task | None = None
+
+
+async def _background_reconnect_loop() -> NoReturn:
+    """Periodically try to reconnect to IB Gateway(s) when offline.
+
+    Runs every 30s. When the gateway comes back (e.g., after wife logs
+    out of TWS), this restores the connection automatically without
+    needing a new MCP session.
+    """
+    global _ib, _ib2, _primary_account, _secondary_account, _account_map, _health_map
+
+    # Try immediately on first run — secondary was deferred from lifespan
+    _first_run = True
+
+    while True:
+        if _first_run:
+            _first_run = False
+            await asyncio.sleep(1)  # Brief yield to let lifespan finish
+        else:
+            await asyncio.sleep(30)
+
+        # Primary: skip if already connected
+        primary_ok = _ib is not None and _ib.isConnected() and _health.connected
+        secondary_ok = (
+            not IB_PORT_2
+            or (_ib2 is not None and _ib2.isConnected() and _health2.connected)
+        )
+
+        if primary_ok and secondary_ok:
+            continue
+
+        async with _ib_lock:
+            # Re-check after acquiring lock
+            if not (_ib is not None and _ib.isConnected() and _health.connected):
+                try:
+                    _ib, _primary_account = await _connect_ib()
+                    _account_map = {}
+                    _health_map = {}
+                    for acc in _ib.managedAccounts():
+                        _account_map[acc] = _ib
+                        _health_map[acc] = _health
+                    logger.info("Background reconnect: primary gateway restored")
+                except Exception as e:
+                    logger.debug(f"Background reconnect (primary) failed: {e}")
+
+            # Secondary
+            if IB_PORT_2 and not (
+                _ib2 is not None and _ib2.isConnected() and _health2.connected
+            ):
+                _ib2, _secondary_account = await _connect_ib2()
+                if _ib2:
+                    for acc in _ib2.managedAccounts():
+                        _account_map[acc] = _ib2
+                        _health_map[acc] = _health2
+                    logger.info("Background reconnect: secondary gateway restored")
 
 
 @asynccontextmanager
@@ -156,11 +233,15 @@ async def http_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """
     Per-session lifespan that lazily connects to IB Gateway(s).
 
-    First session triggers the connection(s). All subsequent sessions
-    reuse the cached connections. If a connection drops (TCP or upstream),
-    the next session reconnects automatically with retry.
+    RESILIENT: Never raises on connection failure. If the gateway is
+    down, yields with ib=None (or stale ib). Tools use the @cached_tool
+    decorator to serve last-known data when the gateway is offline.
+
+    A background task periodically retries connection so the gateway
+    is restored automatically when it comes back.
     """
     global _ib, _ib2, _primary_account, _secondary_account, _account_map, _health_map
+    global _reconnect_task
 
     async with _ib_lock:
         # Primary connection — check TCP + upstream health
@@ -170,35 +251,31 @@ async def http_lifespan(server: FastMCP) -> AsyncIterator[dict]:
             or not _health.connected
         )
         if needs_reconnect:
-            for attempt in range(3):
-                try:
-                    _ib, _primary_account = await _connect_ib()
-                    _account_map = {}
-                    _health_map = {}
-                    for acc in _ib.managedAccounts():
-                        _account_map[acc] = _ib
-                        _health_map[acc] = _health
-                    break
-                except Exception as e:
-                    if attempt == 2:
-                        raise ConnectionError(
-                            f"IB Gateway unavailable after 3 attempts: {e}. "
-                            "Gateway may be restarting or down."
-                        ) from e
-                    logger.warning(f"Connect attempt {attempt + 1} failed: {e}. Retrying in 2s...")
-                    await asyncio.sleep(2)
+            try:
+                _ib, _primary_account = await _connect_ib()
+                _account_map = {}
+                _health_map = {}
+                for acc in _ib.managedAccounts():
+                    _account_map[acc] = _ib
+                    _health_map[acc] = _health
+            except Exception as e:
+                logger.warning(
+                    f"IB Gateway unavailable: {e}. "
+                    "MCP server will continue with cached data. "
+                    "Background reconnect will retry every 30s."
+                )
 
-        # Secondary connection
-        needs_reconnect_2 = (
-            IB_PORT_2
-            and (_ib2 is None or not _ib2.isConnected() or not _health2.connected)
-        )
-        if needs_reconnect_2:
-            _ib2, _secondary_account = await _connect_ib2()
-            if _ib2:
-                for acc in _ib2.managedAccounts():
-                    _account_map[acc] = _ib2
-                    _health_map[acc] = _health2
+        # Secondary connection — handled by background reconnect loop, NOT here.
+        # _connect_ib2() can hang 15-40s if the gateway accepts TCP but doesn't
+        # respond to order sync, which blocks lifespan and causes ClientDisconnect
+        # cascades as Claude Code retries against the held _ib_lock.
+
+        # Ensure background reconnect loop is running (tries secondary immediately)
+        if _reconnect_task is None or _reconnect_task.done():
+            _reconnect_task = asyncio.create_task(
+                _background_reconnect_loop(),
+                name="ibkr_reconnect",
+            )
 
     yield {
         "ib": _ib,
@@ -253,9 +330,9 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    print(f"Starting ibkr_mcp HTTP server on {MCP_HTTP_HOST}:{MCP_HTTP_PORT}")
-    print("Transport: streamable-http")
-    print("Endpoint: /mcp/")
+    logger.info(f"Starting ibkr_mcp HTTP server on {MCP_HTTP_HOST}:{MCP_HTTP_PORT}")
+    logger.info("Transport: streamable-http")
+    logger.info("Endpoint: /mcp/")
 
     mcp.settings.host = MCP_HTTP_HOST
     mcp.settings.port = MCP_HTTP_PORT
@@ -281,12 +358,10 @@ if __name__ == "__main__":
         starlette_app.router.routes.append(
             Mount("/", app=StaticFiles(directory=str(dist_dir), html=True), name="dashboard")
         )
-        print(f"Dashboard: serving frontend from {dist_dir}")
+        logger.info(f"Dashboard: serving frontend from {dist_dir}")
     else:
-        print(f"Dashboard: no frontend found at {dist_dir} (API-only mode)")
+        logger.info(f"Dashboard: no frontend found at {dist_dir} (API-only mode)")
 
-    print()
-    print("To expose via Tailscale Funnel:")
-    print(f"  tailscale funnel {MCP_HTTP_PORT}")
+    logger.info("To expose via Tailscale Funnel: tailscale funnel %d", MCP_HTTP_PORT)
 
     uvicorn.run(starlette_app, host=MCP_HTTP_HOST, port=MCP_HTTP_PORT)

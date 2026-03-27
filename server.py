@@ -37,6 +37,7 @@ import tools.live_data    # noqa: F401, E402
 import tools.risk         # noqa: F401, E402
 import tools.intelligence # noqa: F401, E402
 import tools.monitoring   # noqa: F401, E402
+import tools.export       # noqa: F401, E402
 
 
 if __name__ == "__main__":

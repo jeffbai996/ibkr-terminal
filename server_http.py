@@ -243,6 +243,10 @@ async def http_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     global _ib, _ib2, _primary_account, _secondary_account, _account_map, _health_map
     global _reconnect_task
 
+    # Initialize persistence DB (idempotent, first call only)
+    from core.persistence import init_db
+    init_db()
+
     async with _ib_lock:
         # Primary connection — check TCP + upstream health
         needs_reconnect = (
@@ -305,6 +309,7 @@ import tools.live_data    # noqa: F401, E402
 import tools.risk         # noqa: F401, E402
 import tools.intelligence # noqa: F401, E402
 import tools.monitoring   # noqa: F401, E402
+import tools.export       # noqa: F401, E402
 
 # --- Dashboard REST routes (registered via @mcp.custom_route) ---
 import dashboard  # noqa: F401, E402

@@ -1,12 +1,13 @@
 # ibkr-terminal — Interactive Brokers MCP Server
 
-MCP server for Interactive Brokers. Real-time portfolio analytics, margin simulation, risk management, and market data — exposed as 34 tools over streamable HTTP with multi-account support.
+MCP server for Interactive Brokers. Real-time portfolio analytics, margin simulation, risk management, and market data — exposed as 35 tools over streamable HTTP with multi-account support.
 
-<img src="assets/demo-output.png" width="100%" />
+<p>
+<img src="assets/demo-output.png" width="49%" />
+<img src="assets/demo-toolchain.png" width="49%" />
+</p>
 
-Technicals, performance comparison, and multi-tool orchestration — all from a single natural language prompt on claude.ai.
-
-<img src="assets/demo-toolchain.png" width="100%" />
+*Multi-tool orchestration from a single natural language prompt on claude.ai. Left: technicals, sector exposure, and risk analysis. Right: chained tool calls across market data, portfolio, and intelligence modules.*
 
 ## Architecture
 
@@ -15,11 +16,11 @@ Connects to IB Gateway via `ib_insync` (asyncio-native TWS API wrapper), exposes
 **Transport**: Streamable HTTP (MCP) + stdio fallback + REST dashboard endpoints
 **Accounts**: Multi-gateway — each IB Gateway instance runs on its own port with isolated client IDs
 **Connection**: Lazy per-session IB connection with automatic reconnection and health monitoring
-**Persistence**: Windows Task Scheduler for service lifecycle (survives SSH session termination)
+**Persistence**: SQLite for NLV history and drawdown tracking; Windows Task Scheduler for service lifecycle
 
 ## Tools
 
-34 tools across 8 modules:
+35 tools across 9 modules:
 
 | Module | Count | Capabilities |
 |--------|------:|-------------|
@@ -29,7 +30,8 @@ Connects to IB Gateway via `ib_insync` (asyncio-native TWS API wrapper), exposes
 | **Live Data** | 4 | FX rates, intraday tick snapshots, options chains with Greeks, cross-symbol performance comparison |
 | **Risk** | 4 | What-if margin simulation (buy/sell without placing orders), stress testing (custom scenarios), correlation matrix, Value-at-Risk estimation |
 | **Intelligence** | 5 | Currency exposure breakdown, rebalance planning, sector decomposition, position deep-dive, portfolio beta vs benchmark |
-| **Monitoring** | 4 | Daily movers, drawdown tracking from peak, risk dashboard with status flags, connection health diagnostics |
+| **Monitoring** | 4 | Daily movers, drawdown tracking from peak (auto-reads historical peak from SQLite), risk dashboard with status flags, connection health diagnostics with event history |
+| **Export** | 1 | Complete portfolio dump as single markdown block — account summary, all positions, P&L, concentration, connection health |
 | **Orders** | 2 | Trade history (fills/journal/gains/completed), open order status |
 
 ## Dashboard API
@@ -48,3 +50,21 @@ REST endpoints served alongside MCP on the same process — no separate service.
 - `httpx` — Async HTTP client
 - `pydantic` — Input validation and tool schemas
 - `yfinance` — Supplemental market data for dashboard endpoints
+
+## Demo
+
+<img src="assets/demo-risk.png" width="75%" />
+
+*Risk dashboard with status flags, concentration analysis, and automated outlier detection.*
+
+<img src="assets/demo-correlation.png" width="75%" />
+
+*Pairwise correlation matrix with cluster risk detection and diversification analysis.*
+
+<img src="assets/demo-technicals.png" width="75%" />
+
+*Technical analysis — moving averages, RSI, and 52-week range with visual position indicator.*
+
+<img src="assets/demo-tools.png" width="75%" />
+
+*All 35 tools exposed as MCP connectors on claude.ai, individually toggleable per conversation.*

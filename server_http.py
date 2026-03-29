@@ -157,6 +157,13 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         masked_2 = [f"...{a[-4:]}" for a in accounts_2]
         logger.info(f"Secondary connected. {len(accounts_2)} account(s): {masked_2}. "
                     f"Secondary: ...{secondary[-4:] if secondary else 'auto'}")
+
+        # ib_insync auto-subscribes portfolio for accounts_2[0] only.
+        # Re-subscribe for our target if it's a different account.
+        if secondary and accounts_2 and secondary != accounts_2[0]:
+            await ib2.reqAccountUpdatesAsync(secondary)
+            logger.info(f"Re-subscribed portfolio for secondary: ...{secondary[-4:]}")
+
         return ib2, secondary
     except Exception as e:
         # Clean up partial connection (TCP may be open even if order sync timed out)

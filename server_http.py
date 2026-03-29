@@ -310,6 +310,7 @@ import tools.risk         # noqa: F401, E402
 import tools.intelligence # noqa: F401, E402
 import tools.monitoring   # noqa: F401, E402
 import tools.export       # noqa: F401, E402
+import tools.briefing     # noqa: F401, E402
 
 # --- Dashboard REST routes (registered via @mcp.custom_route) ---
 import dashboard  # noqa: F401, E402

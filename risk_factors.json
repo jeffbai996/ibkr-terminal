@@ -1,0 +1,50 @@
+[
+  {
+    "id": "hormuz",
+    "name": "Strait of Hormuz",
+    "search_query": "Strait of Hormuz shipping threat Iran navy",
+    "affected_symbols": "LRCX,MU,NVDA,AVGO",
+    "impact_channel": "Energy costs → fab operating costs → semi margins compressed",
+    "base_severity": 7
+  },
+  {
+    "id": "houthi_red_sea",
+    "name": "Houthi Red Sea Activity",
+    "search_query": "Houthi Red Sea shipping attacks latest",
+    "affected_symbols": "LRCX,MU,AVGO",
+    "impact_channel": "Supply chain disruption → equipment delivery delays → fab ramp timelines slip",
+    "base_severity": 5
+  },
+  {
+    "id": "energy_infra",
+    "name": "Energy Infrastructure Strikes",
+    "search_query": "Iran Israel energy infrastructure strikes oil refinery",
+    "affected_symbols": "NVDA,AVGO,LRCX,MU,GOOG",
+    "impact_channel": "Oil spike → risk-off rotation → leveraged semi book drawdown → margin pressure",
+    "base_severity": 8
+  },
+  {
+    "id": "truth_social",
+    "name": "Trump Truth Social Escalation",
+    "search_query": "Trump Truth Social tariff Iran threat latest",
+    "affected_symbols": "NVDA,AVGO,MU,LRCX,GOOG",
+    "impact_channel": "Policy uncertainty → VIX spike → margin requirement expansion → forced deleverage",
+    "base_severity": 6
+  },
+  {
+    "id": "china_taiwan",
+    "name": "China-Taiwan Tensions",
+    "search_query": "China Taiwan military exercises semiconductor",
+    "affected_symbols": "NVDA,AVGO,LRCX,MU",
+    "impact_channel": "TSMC supply risk → foundry bottleneck → entire semi chain repriced",
+    "base_severity": 9
+  },
+  {
+    "id": "export_controls",
+    "name": "US-China Export Controls",
+    "search_query": "US China semiconductor export controls new restrictions",
+    "affected_symbols": "NVDA,LRCX,AVGO",
+    "impact_channel": "TAM reduction → China revenue cliff → earnings downgrade cycle",
+    "base_severity": 7
+  }
+]

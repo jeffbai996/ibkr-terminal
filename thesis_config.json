@@ -1,0 +1,46 @@
+{
+  "thesis_name": "AI Infrastructure Buildout",
+  "time_horizon": "2024-2028",
+  "pillars": [
+    {
+      "id": "hbm_demand",
+      "name": "HBM demand growth",
+      "description": "HBM capacity expansion driven by AI training/inference memory bandwidth needs",
+      "key_indicators": "HBM pricing, SK Hynix/Samsung HBM revenue, NVIDIA GPU attach rates",
+      "intact_signal": "HBM pricing stable or rising, capacity sold out 2+ quarters ahead",
+      "invalidation_signal": "HBM demand peaks, pricing collapses >30%, or major cancellations"
+    },
+    {
+      "id": "hyperscaler_capex",
+      "name": "Hyperscaler capex trajectory",
+      "description": "MSFT/GOOG/AMZN/META sustaining or increasing AI infrastructure spend",
+      "key_indicators": "Quarterly capex guidance, datacenter lease commitments, GPU order backlog",
+      "intact_signal": "Capex guides up or flat, no major project cancellations",
+      "invalidation_signal": "Two or more hyperscalers cut capex guidance >15% in same quarter"
+    },
+    {
+      "id": "cxmt_threat",
+      "name": "CXMT competitive threat contained",
+      "description": "Chinese DRAM competitor CXMT remains 2+ generations behind on leading-edge",
+      "key_indicators": "CXMT node progress, yield rates, product mix, sanctions effectiveness",
+      "intact_signal": "CXMT stuck at DDR4/LP5 equivalent, no HBM capability",
+      "invalidation_signal": "CXMT ships HBM3-equivalent or captures >10% DRAM market share"
+    },
+    {
+      "id": "memory_cycle",
+      "name": "Memory cycle positioning",
+      "description": "DRAM/NAND cycle in upcycle or early-mid innings, not late-cycle oversupply",
+      "key_indicators": "Spot vs contract pricing, inventory days, bit shipment growth vs demand",
+      "intact_signal": "Contract prices rising, inventory below 5-year average",
+      "invalidation_signal": "DRAM spot prices decline >20% from peak with rising inventory"
+    },
+    {
+      "id": "ai_revenue",
+      "name": "AI revenue materialization",
+      "description": "AI workloads generating real revenue for infrastructure providers, not just hype",
+      "key_indicators": "NVDA datacenter revenue growth, cloud AI inference revenue, enterprise adoption",
+      "intact_signal": "Datacenter revenue growing >30% YoY, inference revenue emerging",
+      "invalidation_signal": "Datacenter revenue growth decelerates below 15% YoY for two consecutive quarters"
+    }
+  ]
+}

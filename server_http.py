@@ -153,8 +153,13 @@ async def _connect_ib2() -> tuple[IB | None, str]:
     client_id_2 = IB_CLIENT_ID_2
 
     try:
+        # Pass account= to connectAsync so ib_insync's _syncState calls
+        # reqAccountUpdatesAsync(account) during initialization. Without
+        # this, if the gateway manages >1 account, _syncState skips
+        # reqAccountUpdates entirely and portfolio() returns empty.
+        target_account = SECONDARY_ACCOUNT or ""
         logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
-                     f"(clientId={client_id_2})...")
+                     f"(clientId={client_id_2}, account={target_account or 'auto'})...")
         # Hard 15s cap — ib_insync's internal order sync (reqOpenOrders +
         # reqCompletedOrders) can hang 30-40s if the gateway accepts TCP
         # but isn't responding to requests (e.g. TWS session locked).
@@ -165,6 +170,7 @@ async def _connect_ib2() -> tuple[IB | None, str]:
                 clientId=client_id_2,
                 timeout=IB_TIMEOUT,
                 readonly=IB_READONLY,
+                account=target_account,
             ),
             timeout=15,
         )
@@ -179,26 +185,11 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         logger.info(f"Secondary connected. {len(accounts_2)} account(s): {masked_2}. "
                     f"Secondary: ...{secondary[-4:] if secondary else 'auto'}")
 
-        # Diagnostic: what did ib_insync auto-subscribe?
-        auto_positions = len(ib2.positions())
-        auto_portfolio_all = len(list(ib2.portfolio()))
-        auto_portfolio_target = len(list(ib2.portfolio(secondary))) if secondary else 0
-        logger.info(f"Secondary diagnostics: positions()={auto_positions}, "
-                    f"portfolio()={auto_portfolio_all}, "
-                    f"portfolio('{secondary}')={auto_portfolio_target}")
-
-        # If target account has no portfolio data, explicitly subscribe.
-        # ib_insync auto-subscribes accounts_2[0] during connectAsync —
-        # if our target is different, portfolio data won't be there.
-        if secondary and auto_portfolio_target == 0:
-            logger.info(f"No portfolio data for {secondary}, re-subscribing...")
-            try:
-                ib2.reqAccountUpdates(subscribe=True, acctCode=secondary)
-                await asyncio.sleep(3)
-                n_after = len(list(ib2.portfolio(secondary)))
-                logger.info(f"After re-subscribe: portfolio('{secondary}')={n_after}")
-            except Exception as sub_err:
-                logger.warning(f"Portfolio re-subscribe failed: {sub_err}")
+        # Diagnostic: confirm portfolio data populated after connectAsync(account=)
+        n_positions = len(ib2.positions())
+        n_portfolio = len(list(ib2.portfolio(secondary))) if secondary else 0
+        logger.info(f"Secondary diagnostics: positions()={n_positions}, "
+                    f"portfolio('{secondary}')={n_portfolio}")
 
         return ib2, secondary
     except Exception as e:

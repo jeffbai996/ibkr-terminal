@@ -69,16 +69,21 @@ _ib_lock = asyncio.Lock()
 
 
 async def _connect_ib() -> tuple[IB, str]:
-    """Connect to primary IB Gateway.
-
-    Keeps the old IB instance alive until the new one connects, so
-    ib_insync's internal subscription cache (positions, account data)
-    survives failed reconnection attempts.
-    """
+    """Connect to primary IB Gateway."""
     global _ib, _health
 
+    # Disconnect old instance FIRST to free the client ID slot on the gateway
+    if _ib is not None:
+        try:
+            _ib.disconnect()
+        except Exception:
+            pass
+        _ib = None
+
     ib = IB()
-    client_id = IB_CLIENT_ID + 5000 + (os.getpid() % 5000)
+    # Fixed client ID — no randomization. Gateway replaces old sessions
+    # with the same ID, and fixed IDs make debugging easier.
+    client_id = IB_CLIENT_ID
 
     logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
                 f"(clientId={client_id}, readonly={IB_READONLY})...")
@@ -90,13 +95,6 @@ async def _connect_ib() -> tuple[IB, str]:
         timeout=IB_TIMEOUT,
         readonly=IB_READONLY,
     )
-
-    # New connection succeeded — now safe to clean up old one
-    if _ib is not None:
-        try:
-            _ib.disconnect()
-        except Exception:
-            pass
 
     # Attach health monitoring
     _health = ConnectionHealth()
@@ -120,8 +118,17 @@ async def _connect_ib2() -> tuple[IB | None, str]:
     if not IB_PORT_2:
         return None, ""
 
+    # Disconnect old instance FIRST to free the client ID slot
+    if _ib2 is not None:
+        try:
+            _ib2.disconnect()
+        except Exception:
+            pass
+        _ib2 = None
+
     ib2 = IB()
-    client_id_2 = IB_CLIENT_ID_2 + 5000 + (os.getpid() % 5000)
+    # Fixed client ID — no randomization
+    client_id_2 = IB_CLIENT_ID_2
 
     try:
         logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
@@ -129,7 +136,6 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         # Hard 15s cap — ib_insync's internal order sync (reqOpenOrders +
         # reqCompletedOrders) can hang 30-40s if the gateway accepts TCP
         # but isn't responding to requests (e.g. TWS session locked).
-        # The IB_TIMEOUT param only covers the TCP handshake, not the sync.
         await asyncio.wait_for(
             ib2.connectAsync(
                 host=IB_HOST,
@@ -141,13 +147,6 @@ async def _connect_ib2() -> tuple[IB | None, str]:
             timeout=15,
         )
 
-        # New connection succeeded — clean up old one
-        if _ib2 is not None:
-            try:
-                _ib2.disconnect()
-            except Exception:
-                pass
-
         # Attach health monitoring
         _health2 = ConnectionHealth()
         _health2.attach(ib2)
@@ -157,11 +156,6 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         masked_2 = [f"...{a[-4:]}" for a in accounts_2]
         logger.info(f"Secondary connected. {len(accounts_2)} account(s): {masked_2}. "
                     f"Secondary: ...{secondary[-4:] if secondary else 'auto'}")
-
-        # NOTE: ib_insync auto-subscribes portfolio for accounts_2[0]
-        # during connectAsync. If secondary differs, positions may be empty.
-        # reqAccountUpdatesAsync was attempted here but corrupted ib_insync
-        # internal state — see git history.
 
         return ib2, secondary
     except Exception as e:
@@ -345,6 +339,9 @@ if __name__ == "__main__":
     logger.info(f"Starting ibkr_mcp HTTP server on {MCP_HTTP_HOST}:{MCP_HTTP_PORT}")
     logger.info("Transport: streamable-http")
     logger.info("Endpoint: /mcp/")
+    logger.info(f"Config: IB_PORT={IB_PORT}, IB_CLIENT_ID={IB_CLIENT_ID}, "
+                f"IB_PORT_2={IB_PORT_2}, IB_CLIENT_ID_2={IB_CLIENT_ID_2}, "
+                f"SECONDARY_ACCOUNT={SECONDARY_ACCOUNT or '(auto)'}")
 
     mcp.settings.host = MCP_HTTP_HOST
     mcp.settings.port = MCP_HTTP_PORT

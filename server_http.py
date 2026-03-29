@@ -158,14 +158,17 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         logger.info(f"Secondary connected. {len(accounts_2)} account(s): {masked_2}. "
                     f"Secondary: ...{secondary[-4:] if secondary else 'auto'}")
 
-        # ib_insync auto-subscribes portfolio for accounts_2[0] during
-        # connectAsync, but the 15s wait_for timeout may interrupt before
-        # data fully populates. Always explicitly (re-)subscribe.
+        # Explicitly subscribe portfolio for the target account.
+        # Isolated try/except — subscription failure must NOT kill the connection.
         if secondary:
-            await ib2.reqAccountUpdatesAsync(secondary)
-            await asyncio.sleep(2)  # let portfolio data arrive
-            n_pos = len(list(ib2.portfolio(secondary)))
-            logger.info(f"Portfolio subscribed for ...{secondary[-4:]}: {n_pos} positions")
+            try:
+                await ib2.reqAccountUpdatesAsync(secondary)
+                await asyncio.sleep(2)
+                n_pos = len(list(ib2.portfolio(secondary)))
+                logger.info(f"Portfolio subscribed for ...{secondary[-4:]}: {n_pos} positions")
+            except Exception as sub_err:
+                logger.warning(f"Portfolio subscription for ...{secondary[-4:]} failed: {sub_err}. "
+                               "Account summary will work but positions may be empty.")
 
         return ib2, secondary
     except Exception as e:

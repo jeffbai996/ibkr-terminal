@@ -66,6 +66,28 @@ _health: ConnectionHealth = ConnectionHealth()
 _health2: ConnectionHealth = ConnectionHealth()
 _health_map: dict[str, ConnectionHealth] = {}
 _ib_lock = asyncio.Lock()
+# Live context dict — shared with MCP tool context. Background loop
+# updates this in-place so tools always see current gateway state.
+_live_ctx: dict = {}
+
+
+def _sync_live_ctx() -> None:
+    """Push current global state into the live context dict.
+
+    The dict is yielded by http_lifespan and read by tools via
+    ctx.request_context.lifespan_context. Updating in-place ensures
+    tools always see the latest gateway connections, even when the
+    secondary connects after the session started.
+    """
+    _live_ctx.update({
+        "ib": _ib,
+        "ib2": _ib2,
+        "primary_account": _primary_account,
+        "secondary_account": _secondary_account,
+        "account_map": _account_map,
+        "health": _health,
+        "health_map": _health_map,
+    })
 
 
 async def _connect_ib() -> tuple[IB, str]:
@@ -157,6 +179,27 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         logger.info(f"Secondary connected. {len(accounts_2)} account(s): {masked_2}. "
                     f"Secondary: ...{secondary[-4:] if secondary else 'auto'}")
 
+        # Diagnostic: what did ib_insync auto-subscribe?
+        auto_positions = len(ib2.positions())
+        auto_portfolio_all = len(list(ib2.portfolio()))
+        auto_portfolio_target = len(list(ib2.portfolio(secondary))) if secondary else 0
+        logger.info(f"Secondary diagnostics: positions()={auto_positions}, "
+                    f"portfolio()={auto_portfolio_all}, "
+                    f"portfolio('{secondary}')={auto_portfolio_target}")
+
+        # If target account has no portfolio data, explicitly subscribe.
+        # ib_insync auto-subscribes accounts_2[0] during connectAsync —
+        # if our target is different, portfolio data won't be there.
+        if secondary and auto_portfolio_target == 0:
+            logger.info(f"No portfolio data for {secondary}, re-subscribing...")
+            try:
+                ib2.reqAccountUpdates(subscribe=True, acctCode=secondary)
+                await asyncio.sleep(3)
+                n_after = len(list(ib2.portfolio(secondary)))
+                logger.info(f"After re-subscribe: portfolio('{secondary}')={n_after}")
+            except Exception as sub_err:
+                logger.warning(f"Portfolio re-subscribe failed: {sub_err}")
+
         return ib2, secondary
     except Exception as e:
         # Clean up partial connection (TCP may be open even if order sync timed out)
@@ -212,6 +255,7 @@ async def _background_reconnect_loop() -> NoReturn:
                     for acc in _ib.managedAccounts():
                         _account_map[acc] = _ib
                         _health_map[acc] = _health
+                    _sync_live_ctx()
                     logger.info("Background reconnect: primary gateway restored")
                 except Exception as e:
                     logger.debug(f"Background reconnect (primary) failed: {e}")
@@ -225,6 +269,7 @@ async def _background_reconnect_loop() -> NoReturn:
                     for acc in _ib2.managedAccounts():
                         _account_map[acc] = _ib2
                         _health_map[acc] = _health2
+                    _sync_live_ctx()
                     logger.info("Background reconnect: secondary gateway restored")
 
 
@@ -281,15 +326,8 @@ async def http_lifespan(server: FastMCP) -> AsyncIterator[dict]:
                 name="ibkr_reconnect",
             )
 
-    yield {
-        "ib": _ib,
-        "ib2": _ib2,
-        "primary_account": _primary_account,
-        "secondary_account": _secondary_account,
-        "account_map": _account_map,
-        "health": _health,
-        "health_map": _health_map,
-    }
+    _sync_live_ctx()
+    yield _live_ctx
 
 
 # --- Replace app.py's mcp BEFORE tool imports ---

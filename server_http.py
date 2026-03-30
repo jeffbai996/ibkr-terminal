@@ -107,29 +107,16 @@ async def _connect_ib() -> tuple[IB, str]:
     # with the same ID, and fixed IDs make debugging easier.
     client_id = IB_CLIENT_ID
 
-    # Retry up to 3 times — stale connections from a prior crash may hold
-    # the client ID for a few seconds until the gateway's TCP timeout fires.
-    for attempt in range(3):
-        logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
-                    f"(clientId={client_id}, readonly={IB_READONLY})..."
-                    + (f" (retry {attempt})" if attempt else ""))
-        try:
-            await ib.connectAsync(
-                host=IB_HOST,
-                port=IB_PORT,
-                clientId=client_id,
-                timeout=IB_TIMEOUT,
-                readonly=IB_READONLY,
-            )
-            break  # Connected successfully
-        except Exception as e:
-            if "client id" in str(e).lower() or attempt < 2:
-                logger.warning(f"Connection attempt {attempt + 1} failed: {e}. "
-                               "Waiting for stale connection to expire...")
-                await asyncio.sleep(5)
-                ib = IB()  # Fresh instance for retry
-            else:
-                raise
+    logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
+                f"(clientId={client_id}, readonly={IB_READONLY})...")
+
+    await ib.connectAsync(
+        host=IB_HOST,
+        port=IB_PORT,
+        clientId=client_id,
+        timeout=IB_TIMEOUT,
+        readonly=IB_READONLY,
+    )
 
     # Attach health monitoring
     _health = ConnectionHealth()
@@ -167,31 +154,19 @@ async def _connect_ib2() -> tuple[IB | None, str]:
 
     try:
         target_account = SECONDARY_ACCOUNT or ""
-        # Retry up to 3 times for stale client ID
-        for attempt in range(3):
-            logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
-                         f"(clientId={client_id_2}, account={target_account or 'auto'})"
-                         + (f" (retry {attempt})" if attempt else ""))
-            try:
-                await asyncio.wait_for(
-                    ib2.connectAsync(
-                        host=IB_HOST,
-                        port=IB_PORT_2,
-                        clientId=client_id_2,
-                        timeout=IB_TIMEOUT,
-                        readonly=IB_READONLY,
-                        account=target_account,
-                    ),
-                    timeout=15,
-                )
-                break  # Connected
-            except Exception as e:
-                if attempt < 2 and ("client id" in str(e).lower() or "peer closed" in str(e).lower()):
-                    logger.warning(f"Secondary attempt {attempt + 1} failed: {e}. Retrying in 5s...")
-                    await asyncio.sleep(5)
-                    ib2 = IB()
-                else:
-                    raise
+        logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
+                     f"(clientId={client_id_2}, account={target_account or 'auto'})")
+        await asyncio.wait_for(
+            ib2.connectAsync(
+                host=IB_HOST,
+                port=IB_PORT_2,
+                clientId=client_id_2,
+                timeout=IB_TIMEOUT,
+                readonly=IB_READONLY,
+                account=target_account,
+            ),
+            timeout=15,
+        )
 
         # Attach health monitoring
         _health2 = ConnectionHealth()

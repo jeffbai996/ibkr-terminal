@@ -107,16 +107,29 @@ async def _connect_ib() -> tuple[IB, str]:
     # with the same ID, and fixed IDs make debugging easier.
     client_id = IB_CLIENT_ID
 
-    logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
-                f"(clientId={client_id}, readonly={IB_READONLY})...")
-
-    await ib.connectAsync(
-        host=IB_HOST,
-        port=IB_PORT,
-        clientId=client_id,
-        timeout=IB_TIMEOUT,
-        readonly=IB_READONLY,
-    )
+    # Retry up to 3 times — stale connections from a prior crash may hold
+    # the client ID for a few seconds until the gateway's TCP timeout fires.
+    for attempt in range(3):
+        logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
+                    f"(clientId={client_id}, readonly={IB_READONLY})..."
+                    + (f" (retry {attempt})" if attempt else ""))
+        try:
+            await ib.connectAsync(
+                host=IB_HOST,
+                port=IB_PORT,
+                clientId=client_id,
+                timeout=IB_TIMEOUT,
+                readonly=IB_READONLY,
+            )
+            break  # Connected successfully
+        except Exception as e:
+            if "client id" in str(e).lower() or attempt < 2:
+                logger.warning(f"Connection attempt {attempt + 1} failed: {e}. "
+                               "Waiting for stale connection to expire...")
+                await asyncio.sleep(5)
+                ib = IB()  # Fresh instance for retry
+            else:
+                raise
 
     # Attach health monitoring
     _health = ConnectionHealth()
@@ -153,27 +166,32 @@ async def _connect_ib2() -> tuple[IB | None, str]:
     client_id_2 = IB_CLIENT_ID_2
 
     try:
-        # Pass account= to connectAsync so ib_insync's _syncState calls
-        # reqAccountUpdatesAsync(account) during initialization. Without
-        # this, if the gateway manages >1 account, _syncState skips
-        # reqAccountUpdates entirely and portfolio() returns empty.
         target_account = SECONDARY_ACCOUNT or ""
-        logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
-                     f"(clientId={client_id_2}, account={target_account or 'auto'})...")
-        # Hard 15s cap — ib_insync's internal order sync (reqOpenOrders +
-        # reqCompletedOrders) can hang 30-40s if the gateway accepts TCP
-        # but isn't responding to requests (e.g. TWS session locked).
-        await asyncio.wait_for(
-            ib2.connectAsync(
-                host=IB_HOST,
-                port=IB_PORT_2,
-                clientId=client_id_2,
-                timeout=IB_TIMEOUT,
-                readonly=IB_READONLY,
-                account=target_account,
-            ),
-            timeout=15,
-        )
+        # Retry up to 3 times for stale client ID
+        for attempt in range(3):
+            logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
+                         f"(clientId={client_id_2}, account={target_account or 'auto'})"
+                         + (f" (retry {attempt})" if attempt else ""))
+            try:
+                await asyncio.wait_for(
+                    ib2.connectAsync(
+                        host=IB_HOST,
+                        port=IB_PORT_2,
+                        clientId=client_id_2,
+                        timeout=IB_TIMEOUT,
+                        readonly=IB_READONLY,
+                        account=target_account,
+                    ),
+                    timeout=15,
+                )
+                break  # Connected
+            except Exception as e:
+                if attempt < 2 and ("client id" in str(e).lower() or "peer closed" in str(e).lower()):
+                    logger.warning(f"Secondary attempt {attempt + 1} failed: {e}. Retrying in 5s...")
+                    await asyncio.sleep(5)
+                    ib2 = IB()
+                else:
+                    raise
 
         # Attach health monitoring
         _health2 = ConnectionHealth()
@@ -401,5 +419,28 @@ if __name__ == "__main__":
         logger.info(f"Dashboard: no frontend found at {dist_dir} (API-only mode)")
 
     logger.info("To expose via Tailscale Funnel: tailscale funnel %d", MCP_HTTP_PORT)
+
+    def _shutdown_ib():
+        """Disconnect IB connections on server shutdown to free client IDs."""
+        global _ib, _ib2
+        for label, conn in [("primary", _ib), ("secondary", _ib2)]:
+            if conn is not None:
+                try:
+                    conn.disconnect()
+                    logger.info(f"Disconnected {label} IB connection.")
+                except Exception as e:
+                    logger.warning(f"Error disconnecting {label}: {e}")
+        _ib = None
+        _ib2 = None
+
+    import atexit, signal
+    atexit.register(_shutdown_ib)
+
+    def _signal_handler(signum, frame):
+        _shutdown_ib()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
 
     uvicorn.run(starlette_app, host=MCP_HTTP_HOST, port=MCP_HTTP_PORT)

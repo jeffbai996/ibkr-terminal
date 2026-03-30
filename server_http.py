@@ -110,13 +110,22 @@ async def _connect_ib() -> tuple[IB, str]:
     logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
                 f"(clientId={client_id}, readonly={IB_READONLY})...")
 
-    await ib.connectAsync(
-        host=IB_HOST,
-        port=IB_PORT,
-        clientId=client_id,
-        timeout=IB_TIMEOUT,
-        readonly=IB_READONLY,
-    )
+    try:
+        await ib.connectAsync(
+            host=IB_HOST,
+            port=IB_PORT,
+            clientId=client_id,
+            timeout=IB_TIMEOUT,
+            readonly=IB_READONLY,
+        )
+    except Exception:
+        # Clean up partial connection — TCP socket may be open even though
+        # the handshake failed. Without this, gateway holds the clientId.
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+        raise
 
     # Attach health monitoring
     _health = ConnectionHealth()
@@ -260,56 +269,29 @@ async def _background_reconnect_loop() -> NoReturn:
 @asynccontextmanager
 async def http_lifespan(server: FastMCP) -> AsyncIterator[dict]:
     """
-    Per-session lifespan that lazily connects to IB Gateway(s).
+    Per-session lifespan — yields current IB state without blocking.
 
-    RESILIENT: Never raises on connection failure. If the gateway is
-    down, yields with ib=None (or stale ib). Tools use the @cached_tool
-    decorator to serve last-known data when the gateway is offline.
+    NEVER attempts to connect. The background reconnect loop is solely
+    responsible for establishing/restoring gateway connections. This
+    prevents lock contention cascades when the gateway is down.
 
-    A background task periodically retries connection so the gateway
-    is restored automatically when it comes back.
+    Tools handle ib=None via GatewayOfflineError + @cached_tool.
     """
-    global _ib, _ib2, _primary_account, _secondary_account, _account_map, _health_map
     global _reconnect_task
 
     # Initialize persistence DB (idempotent, first call only)
     from core.persistence import init_db
     init_db()
 
-    async with _ib_lock:
-        # Primary connection — check TCP + upstream health
-        needs_reconnect = (
-            _ib is None
-            or not _ib.isConnected()
-            or not _health.connected
+    # Start background reconnect loop if not already running.
+    # This is the ONLY place connections are attempted.
+    if _reconnect_task is None or _reconnect_task.done():
+        _reconnect_task = asyncio.create_task(
+            _background_reconnect_loop(),
+            name="ibkr_reconnect",
         )
-        if needs_reconnect:
-            try:
-                _ib, _primary_account = await _connect_ib()
-                _account_map = {}
-                _health_map = {}
-                for acc in _ib.managedAccounts():
-                    _account_map[acc] = _ib
-                    _health_map[acc] = _health
-            except Exception as e:
-                logger.warning(
-                    f"IB Gateway unavailable: {e}. "
-                    "MCP server will continue with cached data. "
-                    "Background reconnect will retry every 30s."
-                )
 
-        # Secondary connection — handled by background reconnect loop, NOT here.
-        # _connect_ib2() can hang 15-40s if the gateway accepts TCP but doesn't
-        # respond to order sync, which blocks lifespan and causes ClientDisconnect
-        # cascades as Claude Code retries against the held _ib_lock.
-
-        # Ensure background reconnect loop is running (tries secondary immediately)
-        if _reconnect_task is None or _reconnect_task.done():
-            _reconnect_task = asyncio.create_task(
-                _background_reconnect_loop(),
-                name="ibkr_reconnect",
-            )
-
+    # No lock, no connect attempt. Just sync and yield current state.
     _sync_live_ctx()
     yield _live_ctx
 

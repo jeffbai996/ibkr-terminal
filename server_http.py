@@ -433,14 +433,7 @@ if __name__ == "__main__":
         _ib = None
         _ib2 = None
 
-    import atexit, signal
+    import atexit
     atexit.register(_shutdown_ib)
-
-    def _signal_handler(signum, frame):
-        _shutdown_ib()
-        raise SystemExit(0)
-
-    signal.signal(signal.SIGTERM, _signal_handler)
-    signal.signal(signal.SIGINT, _signal_handler)
 
     uvicorn.run(starlette_app, host=MCP_HTTP_HOST, port=MCP_HTTP_PORT)

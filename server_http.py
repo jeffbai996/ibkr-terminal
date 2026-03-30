@@ -90,8 +90,41 @@ def _sync_live_ctx() -> None:
     })
 
 
+async def _try_connect(host: str, port: int, client_id: int,
+                       timeout: int, readonly: bool,
+                       account: str = "") -> IB:
+    """Attempt a single IB Gateway connection. Cleans up on failure.
+
+    Returns connected IB instance or raises on failure.
+    Always calls ib.disconnect() if connectAsync fails, so the gateway
+    frees the clientId slot even on partial TCP connections.
+    """
+    ib = IB()
+    try:
+        kwargs: dict = {
+            "host": host, "port": port, "clientId": client_id,
+            "timeout": timeout, "readonly": readonly,
+        }
+        if account:
+            kwargs["account"] = account
+        await ib.connectAsync(**kwargs)
+        return ib
+    except Exception:
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+        raise
+
+
 async def _connect_ib() -> tuple[IB, str]:
-    """Connect to primary IB Gateway."""
+    """Connect to primary IB Gateway.
+
+    Tries the configured clientId first. If Error 326 (clientId in use),
+    falls back to a random ID to bypass stale gateway sessions from a
+    prior crash. Logs which ID was actually used.
+    """
+    import random
     global _ib, _health
 
     # Disconnect old instance FIRST to free the client ID slot on the gateway
@@ -102,48 +135,45 @@ async def _connect_ib() -> tuple[IB, str]:
             pass
         _ib = None
 
-    ib = IB()
-    # Fixed client ID — no randomization. Gateway replaces old sessions
-    # with the same ID, and fixed IDs make debugging easier.
-    client_id = IB_CLIENT_ID
+    # Try configured ID first, then random fallback
+    ids_to_try = [IB_CLIENT_ID, random.randint(100, 999)]
 
-    logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
-                f"(clientId={client_id}, readonly={IB_READONLY})...")
-
-    try:
-        await ib.connectAsync(
-            host=IB_HOST,
-            port=IB_PORT,
-            clientId=client_id,
-            timeout=IB_TIMEOUT,
-            readonly=IB_READONLY,
-        )
-    except Exception:
-        # Clean up partial connection — TCP socket may be open even though
-        # the handshake failed. Without this, gateway holds the clientId.
+    for i, client_id in enumerate(ids_to_try):
+        label = "" if i == 0 else " (fallback)"
+        logger.info(f"Connecting to IB Gateway at {IB_HOST}:{IB_PORT} "
+                    f"(clientId={client_id}, readonly={IB_READONLY}){label}...")
         try:
-            ib.disconnect()
-        except Exception:
-            pass
-        raise
+            ib = await _try_connect(IB_HOST, IB_PORT, client_id,
+                                    IB_TIMEOUT, IB_READONLY)
 
-    # Attach health monitoring
-    _health = ConnectionHealth()
-    _health.attach(ib)
+            # Attach health monitoring
+            _health = ConnectionHealth()
+            _health.attach(ib)
 
-    accounts = ib.managedAccounts()
-    primary = PRIMARY_ACCOUNT
-    if not primary and accounts:
-        primary = accounts[0]
+            accounts = ib.managedAccounts()
+            primary = PRIMARY_ACCOUNT
+            if not primary and accounts:
+                primary = accounts[0]
 
-    masked = [f"...{a[-4:]}" for a in accounts]
-    logger.info(f"Connected. {len(accounts)} account(s): {masked}. "
-                f"Primary: ...{primary[-4:] if primary else 'auto'}")
-    return ib, primary
+            masked = [f"...{a[-4:]}" for a in accounts]
+            logger.info(f"Connected{label}. {len(accounts)} account(s): {masked}. "
+                        f"Primary: ...{primary[-4:] if primary else 'auto'}")
+            return ib, primary
+        except Exception as e:
+            if i < len(ids_to_try) - 1:
+                logger.warning(f"clientId {client_id} failed: {e}. "
+                               "Trying fallback ID...")
+                continue
+            raise
 
 
 async def _connect_ib2() -> tuple[IB | None, str]:
-    """Connect to secondary IB Gateway. Returns (None, "") if not configured or fails."""
+    """Connect to secondary IB Gateway. Returns (None, "") if not configured or fails.
+
+    Same fallback strategy as _connect_ib() — tries configured ID first,
+    then random on Error 326.
+    """
+    import random
     global _ib2, _health2
 
     if not IB_PORT_2:
@@ -157,25 +187,30 @@ async def _connect_ib2() -> tuple[IB | None, str]:
             pass
         _ib2 = None
 
-    ib2 = IB()
-    # Fixed client ID — no randomization
-    client_id_2 = IB_CLIENT_ID_2
+    target_account = SECONDARY_ACCOUNT or ""
+    ids_to_try = [IB_CLIENT_ID_2, random.randint(100, 999)]
 
     try:
-        target_account = SECONDARY_ACCOUNT or ""
-        logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
-                     f"(clientId={client_id_2}, account={target_account or 'auto'})")
-        await asyncio.wait_for(
-            ib2.connectAsync(
-                host=IB_HOST,
-                port=IB_PORT_2,
-                clientId=client_id_2,
-                timeout=IB_TIMEOUT,
-                readonly=IB_READONLY,
-                account=target_account,
-            ),
-            timeout=15,
-        )
+        ib2 = None
+        for i, client_id_2 in enumerate(ids_to_try):
+            label = "" if i == 0 else " (fallback)"
+            logger.info(f"Connecting to secondary IB Gateway at {IB_HOST}:{IB_PORT_2} "
+                         f"(clientId={client_id_2}, account={target_account or 'auto'}){label}")
+            try:
+                ib2 = await asyncio.wait_for(
+                    _try_connect(IB_HOST, IB_PORT_2, client_id_2,
+                                 IB_TIMEOUT, IB_READONLY, account=target_account),
+                    timeout=15,
+                )
+                break  # Connected
+            except Exception as e:
+                if i < len(ids_to_try) - 1:
+                    logger.warning(f"Secondary clientId {client_id_2} failed: {e}. "
+                                   "Trying fallback ID...")
+                    continue
+                raise
+        if ib2 is None:
+            raise RuntimeError("All client IDs failed")
 
         # Attach health monitoring
         _health2 = ConnectionHealth()
@@ -196,10 +231,11 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         return ib2, secondary
     except Exception as e:
         # Clean up partial connection (TCP may be open even if order sync timed out)
-        try:
-            ib2.disconnect()
-        except Exception:
-            pass
+        if ib2 is not None:
+            try:
+                ib2.disconnect()
+            except Exception:
+                pass
         msg = "timed out (15s)" if isinstance(e, asyncio.TimeoutError) else str(e)
         logger.warning(f"Failed to connect to secondary IB Gateway on port {IB_PORT_2}: {msg}. "
                        "Continuing with primary only.")

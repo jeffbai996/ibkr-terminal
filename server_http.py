@@ -274,32 +274,39 @@ async def _background_reconnect_loop() -> NoReturn:
         if primary_ok and secondary_ok:
             continue
 
-        async with _ib_lock:
-            # Re-check after acquiring lock
-            if not (_ib is not None and _ib.isConnected() and _health.connected):
-                try:
-                    _ib, _primary_account = await _connect_ib()
-                    _account_map = {}
-                    _health_map = {}
-                    for acc in _ib.managedAccounts():
-                        _account_map[acc] = _ib
-                        _health_map[acc] = _health
-                    _sync_live_ctx()
-                    logger.info("Background reconnect: primary gateway restored")
-                except Exception as e:
-                    logger.debug(f"Background reconnect (primary) failed: {e}")
+        try:
+            async with _ib_lock:
+                # Re-check after acquiring lock
+                if not (_ib is not None and _ib.isConnected() and _health.connected):
+                    try:
+                        _ib, _primary_account = await _connect_ib()
+                        _account_map = {}
+                        _health_map = {}
+                        for acc in _ib.managedAccounts():
+                            _account_map[acc] = _ib
+                            _health_map[acc] = _health
+                        _sync_live_ctx()
+                        logger.info("Background reconnect: primary gateway restored")
+                    except Exception as e:
+                        logger.warning(f"Background reconnect (primary) failed: {e}")
 
-            # Secondary
-            if IB_PORT_2 and not (
-                _ib2 is not None and _ib2.isConnected() and _health2.connected
-            ):
-                _ib2, _secondary_account = await _connect_ib2()
-                if _ib2:
-                    for acc in _ib2.managedAccounts():
-                        _account_map[acc] = _ib2
-                        _health_map[acc] = _health2
-                    _sync_live_ctx()
-                    logger.info("Background reconnect: secondary gateway restored")
+                # Secondary
+                if IB_PORT_2 and not (
+                    _ib2 is not None and _ib2.isConnected() and _health2.connected
+                ):
+                    try:
+                        _ib2, _secondary_account = await _connect_ib2()
+                        if _ib2:
+                            for acc in _ib2.managedAccounts():
+                                _account_map[acc] = _ib2
+                                _health_map[acc] = _health2
+                            _sync_live_ctx()
+                            logger.info("Background reconnect: secondary gateway restored")
+                    except Exception as e:
+                        logger.warning(f"Background reconnect (secondary) failed: {e}")
+        except Exception as e:
+            # Catch-all so the loop never dies silently
+            logger.error(f"Background reconnect loop error: {e}", exc_info=True)
 
 
 @asynccontextmanager

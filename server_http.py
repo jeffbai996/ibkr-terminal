@@ -121,10 +121,9 @@ async def _connect_ib() -> tuple[IB, str]:
     """Connect to primary IB Gateway.
 
     Tries the configured clientId first. If Error 326 (clientId in use),
-    falls back to a random ID to bypass stale gateway sessions from a
-    prior crash. Logs which ID was actually used.
+    falls back to configured + 100 to bypass stale gateway sessions from
+    a prior crash. Fixed fallback avoids tab explosion from random IDs.
     """
-    import random
     global _ib, _health
 
     # Disconnect old instance FIRST to free the client ID slot on the gateway
@@ -135,8 +134,8 @@ async def _connect_ib() -> tuple[IB, str]:
             pass
         _ib = None
 
-    # Try configured ID first, then random fallback
-    ids_to_try = [IB_CLIENT_ID, random.randint(100, 999)]
+    # Try configured ID first, then fixed fallback (not random — avoids gateway tab explosion)
+    ids_to_try = [IB_CLIENT_ID, IB_CLIENT_ID + 100]
 
     for i, client_id in enumerate(ids_to_try):
         label = "" if i == 0 else " (fallback)"
@@ -171,9 +170,8 @@ async def _connect_ib2() -> tuple[IB | None, str]:
     """Connect to secondary IB Gateway. Returns (None, "") if not configured or fails.
 
     Same fallback strategy as _connect_ib() — tries configured ID first,
-    then random on Error 326.
+    then fixed fallback on Error 326.
     """
-    import random
     global _ib2, _health2
 
     if not IB_PORT_2:
@@ -188,7 +186,7 @@ async def _connect_ib2() -> tuple[IB | None, str]:
         _ib2 = None
 
     target_account = SECONDARY_ACCOUNT or ""
-    ids_to_try = [IB_CLIENT_ID_2, random.randint(100, 999)]
+    ids_to_try = [IB_CLIENT_ID_2, IB_CLIENT_ID_2 + 100]
 
     try:
         ib2 = None

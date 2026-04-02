@@ -397,6 +397,13 @@ if __name__ == "__main__":
     # the Accept header check to only require application/json.
     mcp.settings.json_response = True
 
+    # Stateless mode — no session IDs, no GET SSE streams. Each request
+    # is independent. Fixes: (1) Claude Code stale session bug (#27142)
+    # where client caches dead session ID and never re-initializes,
+    # (2) claude.ai 409 race condition from overlapping SSE streams.
+    # Safe because all state lives in IB Gateway, not MCP sessions.
+    mcp.settings.stateless_http = True
+
     # Disable DNS rebinding protection — requests come through Tailscale
     # Funnel with a non-localhost Host header, not 0.0.0.0
     mcp.settings.transport_security = TransportSecuritySettings(

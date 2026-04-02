@@ -65,6 +65,6 @@ REST endpoints served alongside MCP on the same process — no separate service.
 
 *Technical analysis — moving averages, RSI, and 52-week range with visual position indicator.*
 
-<img src="assets/demo-tools.png" width="75%" />
+<img src="assets/demo-dashboard.png" width="75%" />
 
-*All 35 tools exposed as MCP connectors on claude.ai, individually toggleable per conversation.*
+*Full account dashboard rendered as a claude.ai artifact — margin health, VaR, drawdown tracking, P&L heatmap, position weights, and correlation matrix from a single prompt.*

@@ -39,6 +39,7 @@ import tools.intelligence # noqa: F401, E402
 import tools.monitoring   # noqa: F401, E402
 import tools.export       # noqa: F401, E402
 import tools.briefing     # noqa: F401, E402
+import tools.intraday    # noqa: F401, E402
 
 
 if __name__ == "__main__":

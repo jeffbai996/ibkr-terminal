@@ -442,4 +442,12 @@ if __name__ == "__main__":
     import atexit
     atexit.register(_shutdown_ib)
 
-    uvicorn.run(starlette_app, host=MCP_HTTP_HOST, port=MCP_HTTP_PORT)
+    # Use async Server API to avoid nest_asyncio incompatibility with
+    # uvicorn>=0.30 which passes loop_factory to asyncio.run() — a kwarg
+    # the nest_asyncio-patched run() doesn't accept.
+    async def _run_server() -> None:
+        config = uvicorn.Config(starlette_app, host=MCP_HTTP_HOST, port=MCP_HTTP_PORT)
+        server = uvicorn.Server(config)
+        await server.serve()
+
+    asyncio.run(_run_server())

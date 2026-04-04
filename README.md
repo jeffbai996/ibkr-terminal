@@ -2,16 +2,15 @@
 
 MCP server for Interactive Brokers. Real-time portfolio analytics, margin simulation, risk management, and market data — exposed as 35 tools over streamable HTTP with multi-account support.
 
-<p>
-<img src="assets/demo-output.png" width="49%" />
-<img src="assets/demo-toolchain.png" width="49%" />
+<p align="center">
+<img src="assets/demo-dashboard.png" width="90%" />
 </p>
 
-*Multi-tool orchestration from a single natural language prompt on claude.ai. Left: technicals, sector exposure, and risk analysis. Right: chained tool calls across market data, portfolio, and intelligence modules.*
+<p align="center"><em>Full account dashboard rendered as a claude.ai artifact — margin health, VaR, drawdown tracking, P&L heatmap, position weights, and correlation matrix from a single prompt.</em></p>
 
 ## Architecture
 
-Connects to IB Gateway via `ib_insync` (asyncio-native TWS API wrapper), exposes tools through the Model Context Protocol. Dual transport: stdio for local CLI usage, streamable HTTP for remote access. Designed for headless deployment on a persistent server with multiple gateway instances.
+Connects to IB Gateway via `ib_insync` (asyncio-native TWS API wrapper), exposes tools through the Model Context Protocol. Dual transport: stdio for local CLI usage, streamable HTTP for remote access. Designed for headless deployment on a persistent server with multiple gateway instances; runs against a live multi-account portfolio in production.
 
 **Transport**: Streamable HTTP (MCP) + stdio fallback + REST dashboard endpoints
 **Accounts**: Multi-gateway — each IB Gateway instance runs on its own port with isolated client IDs
@@ -53,18 +52,15 @@ REST endpoints served alongside MCP on the same process — no separate service.
 
 ## Demo
 
+<img src="assets/demo-output.png" width="75%" />
+
+*Technicals, sector exposure, and risk analysis from a single natural language prompt on claude.ai.*
+
+<img src="assets/demo-toolchain.png" width="75%" />
+
+*Chained tool calls across market data, portfolio, and intelligence modules.*
+
 <img src="assets/demo-risk.png" width="75%" />
 
 *Risk dashboard with status flags, concentration analysis, and automated outlier detection.*
 
-<img src="assets/demo-correlation.png" width="75%" />
-
-*Pairwise correlation matrix with cluster risk detection and diversification analysis.*
-
-<img src="assets/demo-technicals.png" width="75%" />
-
-*Technical analysis — moving averages, RSI, and 52-week range with visual position indicator.*
-
-<img src="assets/demo-dashboard.png" width="75%" />
-
-*Full account dashboard rendered as a claude.ai artifact — margin health, VaR, drawdown tracking, P&L heatmap, position weights, and correlation matrix from a single prompt.*

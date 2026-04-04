@@ -36,7 +36,10 @@ nest_asyncio.apply()
 import asyncio
 import logging
 import os
+import signal
+import subprocess
 import sys
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import NoReturn
@@ -441,6 +444,46 @@ if __name__ == "__main__":
 
     import atexit
     atexit.register(_shutdown_ib)
+
+    def _free_port(port: int) -> None:
+        """Kill any process holding port before we try to bind it."""
+        try:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True,
+            )
+            pids = [p.strip() for p in result.stdout.splitlines() if p.strip()]
+            if not pids:
+                return
+            own_pid = str(os.getpid())
+            for pid in pids:
+                if pid == own_pid:
+                    continue
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                    logger.info("Sent SIGTERM to pid %s holding port %d", pid, port)
+                except ProcessLookupError:
+                    pass
+            # Give processes a moment to exit cleanly
+            time.sleep(0.5)
+            # SIGKILL anything still alive
+            result2 = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True,
+            )
+            for pid in [p.strip() for p in result2.stdout.splitlines() if p.strip()]:
+                if pid == own_pid:
+                    continue
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                    logger.warning("SIGKILL pid %s (did not exit after SIGTERM)", pid)
+                except ProcessLookupError:
+                    pass
+        except FileNotFoundError:
+            # lsof not available — skip silently
+            pass
+
+    _free_port(MCP_HTTP_PORT)
 
     # Use async Server API to avoid nest_asyncio incompatibility with
     # uvicorn>=0.30 which passes loop_factory to asyncio.run() — a kwarg

@@ -10,7 +10,7 @@ from ib_insync.ticker import Ticker
 
 from tools.live_data import (
     ibkr_get_fx_rate,
-    ibkr_get_intraday_snapshot,
+    ibkr_get_intraday,
     ibkr_get_option_chain,
     ibkr_compare_performance,
     FxInput,
@@ -116,7 +116,7 @@ class TestIntradaySnapshot:
         ib.reqHistoricalDataAsync = AsyncMock(return_value=bars)
         ctx = make_ctx(ib=ib)
 
-        result = await ibkr_get_intraday_snapshot(
+        result = await ibkr_get_intraday(
             IntradayInput(symbol="NVDA", minutes=3), ctx
         )
 
@@ -134,7 +134,7 @@ class TestIntradaySnapshot:
         ib.reqHistoricalDataAsync = AsyncMock(return_value=bars)
         ctx = make_ctx(ib=ib)
 
-        result = await ibkr_get_intraday_snapshot(
+        result = await ibkr_get_intraday(
             IntradayInput(symbol="NVDA", minutes=5), ctx
         )
 
@@ -148,7 +148,7 @@ class TestIntradaySnapshot:
         ib.reqHistoricalDataAsync = AsyncMock(return_value=[])
         ctx = make_ctx(ib=ib)
 
-        result = await ibkr_get_intraday_snapshot(
+        result = await ibkr_get_intraday(
             IntradayInput(symbol="NVDA"), ctx
         )
 
@@ -160,7 +160,7 @@ class TestIntradaySnapshot:
         ib.qualifyContractsAsync = AsyncMock(return_value=[])
         ctx = make_ctx(ib=ib)
 
-        result = await ibkr_get_intraday_snapshot(
+        result = await ibkr_get_intraday(
             IntradayInput(symbol="ZZZZ"), ctx
         )
 
@@ -177,7 +177,7 @@ class TestIntradaySnapshot:
         ib.reqHistoricalDataAsync = AsyncMock(return_value=bars)
         ctx = make_ctx(ib=ib)
 
-        result = await ibkr_get_intraday_snapshot(
+        result = await ibkr_get_intraday(
             IntradayInput(symbol="NVDA", minutes=30), ctx
         )
 

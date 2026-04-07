@@ -1,4 +1,4 @@
-"""Integration tests for tools/account.py — account summary, margin, P&L, briefing."""
+"""Integration tests for tools/account.py — account summary, margin, P&L."""
 
 import math
 
@@ -11,11 +11,10 @@ from tools.account import (
     ibkr_margin,
     ibkr_list_accounts,
     ibkr_get_account_pnl,
-    ibkr_morning_briefing,
     AccountInput,
-    BriefingInput,
     MarginInput,
 )
+from tools.briefing import ibkr_briefing, BriefingInput
 from tests.conftest import (
     make_ctx, make_mock_ib, make_summary, make_account_value,
     make_positions, TEST_ACCOUNT,
@@ -163,6 +162,8 @@ class TestAccountPnl:
         assert "+$5,000.00 USD" in result
         assert "+$200,000.00 USD" in result
         assert "+$150.00 USD" in result
+        # Daily P&L should show % of NLV (5000/10M = +0.05%)
+        assert "% of NLV" in result
 
     @pytest.mark.anyio
     async def test_pnl_cancels_subscription(self):
@@ -214,7 +215,7 @@ class TestAccountPnl:
         assert "N/A" in result
 
 
-# --- Morning Briefing ---
+# --- Briefing ---
 
 def _make_briefing_ib(
     positions=None,
@@ -261,27 +262,26 @@ def _make_briefing_ib(
     return ib
 
 
-class TestMorningBriefing:
+class TestBriefing:
     @pytest.mark.anyio
     async def test_basic_output(self):
         ib = _make_briefing_ib()
         ctx = make_ctx(ib=ib)
-        result = await ibkr_morning_briefing(BriefingInput(), ctx)
+        result = await ibkr_briefing(BriefingInput(), ctx)
 
-        assert "# Morning Briefing" in result
+        assert "# Briefing:" in result
         assert "Account Health" in result
-        assert "$10,000,000.00 USD" in result  # NLV
+        assert "10,000,000" in result  # NLV
         assert "1.80x" in result  # leverage
         assert "Daily P&L" in result
-        assert "+$5,000.00 USD" in result  # daily
 
     @pytest.mark.anyio
     async def test_top_movers(self):
         ib = _make_briefing_ib()
         ctx = make_ctx(ib=ib)
-        result = await ibkr_morning_briefing(BriefingInput(), ctx)
+        result = await ibkr_briefing(BriefingInput(), ctx)
 
-        assert "Top Gainers" in result
+        assert "Top Movers" in result
         assert "MSFT" in result  # highest daily = 3000
         assert "JPM" in result  # second = 1500
 
@@ -289,7 +289,7 @@ class TestMorningBriefing:
     async def test_open_orders_shown(self):
         ib = _make_briefing_ib(with_orders=True)
         ctx = make_ctx(ib=ib)
-        result = await ibkr_morning_briefing(BriefingInput(), ctx)
+        result = await ibkr_briefing(BriefingInput(), ctx)
 
         assert "1 open order" in result
         assert "NVDA" in result
@@ -299,7 +299,7 @@ class TestMorningBriefing:
     async def test_no_orders(self):
         ib = _make_briefing_ib()
         ctx = make_ctx(ib=ib)
-        result = await ibkr_morning_briefing(BriefingInput(), ctx)
+        result = await ibkr_briefing(BriefingInput(), ctx)
 
         assert "No open orders." in result
 
@@ -308,7 +308,7 @@ class TestMorningBriefing:
         """All P&L subscriptions must be cancelled in finally."""
         ib = _make_briefing_ib()
         ctx = make_ctx(ib=ib)
-        await ibkr_morning_briefing(BriefingInput(), ctx)
+        await ibkr_briefing(BriefingInput(), ctx)
 
         ib.cancelPnL.assert_called_once()
         assert ib.cancelPnLSingle.call_count == 5  # one per position
@@ -318,9 +318,9 @@ class TestMorningBriefing:
         ib = _make_briefing_ib(positions=[])
         ib.reqPnLSingle.side_effect = []
         ctx = make_ctx(ib=ib)
-        result = await ibkr_morning_briefing(BriefingInput(), ctx)
+        result = await ibkr_briefing(BriefingInput(), ctx)
 
-        assert "Morning Briefing" in result
+        assert "Briefing:" in result
         assert "No open orders." in result
 
     @pytest.mark.anyio
@@ -341,7 +341,7 @@ class TestMorningBriefing:
         ib.reqPnLSingle.side_effect = pnl_singles
         ctx = make_ctx(ib=ib)
 
-        result = await ibkr_morning_briefing(BriefingInput(), ctx)
+        result = await ibkr_briefing(BriefingInput(), ctx)
 
         # Should not crash, NVDA (NaN daily) excluded from movers
-        assert "Morning Briefing" in result
+        assert "Briefing:" in result

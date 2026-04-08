@@ -1,6 +1,6 @@
 # ibkr-terminal — Interactive Brokers MCP Server
 
-MCP server for Interactive Brokers. Real-time portfolio analytics, margin simulation, risk management, and market data — exposed as 35 tools over streamable HTTP with multi-account support.
+MCP server for Interactive Brokers. Real-time portfolio analytics, margin simulation, risk management, and market data — exposed as 32 tools over streamable HTTP with multi-account support.
 
 <p align="center">
 <img src="assets/demo-dashboard.png" width="90%" />
@@ -10,47 +10,71 @@ MCP server for Interactive Brokers. Real-time portfolio analytics, margin simula
 
 ## Architecture
 
-Connects to IB Gateway via `ib_insync` (asyncio-native TWS API wrapper), exposes tools through the Model Context Protocol. Dual transport: stdio for local CLI usage, streamable HTTP for remote access. Designed for headless deployment on a persistent server with multiple gateway instances; runs against a live multi-account portfolio in production.
+Two-repo structure: `ibkr-terminal` (server entry points, config, tests) and `ibkr-terminal-core` (all tools and core logic, installed as editable package). Connects to IB Gateway via `ib_insync`, exposes tools through the Model Context Protocol. Dual transport: stdio for local CLI, streamable HTTP for remote access. Designed for headless deployment on a persistent server with multiple gateway instances.
 
 **Transport**: Streamable HTTP (MCP) + stdio fallback + REST dashboard endpoints
 **Accounts**: Multi-gateway — each IB Gateway instance runs on its own port with isolated client IDs
-**Connection**: Lazy per-session IB connection with automatic reconnection and health monitoring
-**Persistence**: SQLite for NLV history and drawdown tracking; Windows Task Scheduler for service lifecycle
+**Connection**: Background reconnect loop with lazy initialization; tools gracefully handle offline gateway via `@cached_tool` stale responses
+**Persistence**: SQLite for NLV history and drawdown tracking
+**Security**: Tailscale Funnel (HTTPS + non-guessable URL); all tools are read-only (no order placement)
 
 ## Tools
 
-35 tools across 9 modules:
+32 tools across 9 modules:
 
-| Module | Count | Capabilities |
-|--------|------:|-------------|
-| **Account** | 6 | NAV, margin analysis (summary/efficiency/headroom), buying power, daily P&L, morning briefings, cross-account consolidated view |
-| **Portfolio** | 3 | Positions with live P&L, portfolio snapshots, per-position P&L breakdown |
-| **Market Data** | 6 | Real-time quotes (single/multi/portfolio), historical OHLCV bars, contract details, dividends, contract search, technicals (SMA/RSI/MACD/Bollinger) |
-| **Live Data** | 4 | FX rates, intraday tick snapshots, options chains with Greeks, cross-symbol performance comparison |
-| **Risk** | 4 | What-if margin simulation (buy/sell without placing orders), stress testing (custom scenarios), correlation matrix, Value-at-Risk estimation |
-| **Intelligence** | 5 | Currency exposure breakdown, rebalance planning, sector decomposition, position deep-dive, portfolio beta vs benchmark |
-| **Monitoring** | 4 | Daily movers, drawdown tracking from peak (auto-reads historical peak from SQLite), risk dashboard with status flags, connection health diagnostics with event history |
-| **Export** | 1 | Complete portfolio dump as single markdown block — account summary, all positions, P&L, concentration, connection health |
+| Module | Count | Tools |
+|--------|------:|-------|
+| **Account** | 5 | Account summary, margin analysis (efficiency/headroom/per-symbol), daily P&L ($ and % of NLV), multi-account consolidated view with FX conversion, account listing |
+| **Briefing** | 3 | Unified briefing (positions, P&L, margin, movers, concentration — replaces 3 legacy tools), geopolitical risk scanner, thesis conformance checker |
+| **Portfolio** | 1 | Positions with cost basis, unrealized P&L ($ and %), and portfolio weight |
+| **Market Data** | 6 | Real-time quotes, historical OHLCV bars, contract details, dividends, contract search, technicals (SMA/RSI/MACD/Bollinger) |
+| **Live Data** | 4 | FX rates, intraday bars, options chains with Greeks, cross-symbol performance comparison |
+| **Risk** | 4 | What-if margin simulation, stress testing (custom scenarios + preflight), correlation matrix, Value-at-Risk (parametric) |
+| **Intelligence** | 5 | Currency exposure, rebalance planning, sector decomposition, position deep-dive with P&L attribution, portfolio beta vs benchmark |
+| **Monitoring** | 2 | Drawdown tracking from peak (reads historical NLV from SQLite), connection health diagnostics with event history |
 | **Orders** | 2 | Trade history (fills/journal/gains/completed), open order status |
 
 ## Dashboard API
 
-REST endpoints served alongside MCP on the same process — no separate service. Built with `@mcp.custom_route()` for zero-overhead integration.
+REST endpoints served alongside MCP on the same process via `@mcp.custom_route()`. Powers a Vite+React frontend (optional, served as static files if built).
 
-- `/api/portfolio` — Positions, P&L, account summary
-- `/api/risk` — Margin utilization, stress scenarios
-- `/api/query` — Natural language portfolio queries via LLM passthrough
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/summary` | GET | Account summary JSON (NLV, margin, cushion, leverage) |
+| `/api/positions` | GET | Positions with merged cross-account view |
+| `/api/prices` | GET | Live prices from Yahoo Finance (symbols via query param) |
+| `/api/margin` | GET | Margin analysis (markdown) |
+| `/api/account-summary` | GET | Account summary (markdown) |
+| `/api/account-pnl` | GET | Daily P&L (markdown) |
+| `/api/currency` | GET | Currency exposure (markdown) |
+| `/api/stress` | GET | Stress test scenarios (markdown) |
+| `/api/what-if` | GET | What-if margin simulation (markdown) |
+| `/api/trades` | GET | Trade history (markdown) |
+| `/api/dividends` | GET | Dividend calendar (markdown) |
+| `/api/technicals` | GET | Technical indicators (markdown) |
+| `/api/status` | GET | Connection health (markdown) |
+| `/api/health` | GET | Simple health check JSON |
+| `/api/query` | POST | Natural language queries via Claude API passthrough |
 
 ## Stack
 
-- `mcp` (FastMCP) — Model Context Protocol SDK
+- `mcp` (FastMCP) — Model Context Protocol SDK with streamable HTTP
 - `ib_insync` — IB TWS API, asyncio-native
-- `uvicorn` — ASGI server for streamable HTTP transport
-- `httpx` — Async HTTP client
+- `uvicorn` — ASGI server for HTTP transport
+- `nest_asyncio` — Nested event loops (ib_insync inside FastMCP's asyncio loop)
+- `httpx` — Async HTTP client for Claude API passthrough
 - `pydantic` — Input validation and tool schemas
-- `yfinance` — Supplemental market data for dashboard endpoints
+- `yfinance` — Yahoo Finance prices for dashboard (MCP tools use IB market data)
 
 ## Demo
+
+### Live Dashboard Artifact
+
+Full portfolio dashboard generated from a single prompt on claude.ai — margin health, positions, P&L heatmap, sector concentration, and correlation matrix, all rendered as an interactive artifact.
+
+<iframe src="https://claude.site/public/artifacts/ee62368f-5175-4bc0-aea7-d4399ccaf7d4/embed" title="IBKR Portfolio Dashboard" width="100%" height="800" frameborder="0" allow="clipboard-write" allowfullscreen></iframe>
+
+### Screenshots
 
 <img src="assets/demo-output.png" width="75%" />
 
@@ -62,5 +86,5 @@ REST endpoints served alongside MCP on the same process — no separate service.
 
 <img src="assets/demo-risk.png" width="75%" />
 
-*Risk dashboard with status flags, concentration analysis, and automated outlier detection.*
+*Stress testing and margin analysis with automated scenario generation.*
 

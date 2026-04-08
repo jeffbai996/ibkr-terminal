@@ -68,13 +68,7 @@ REST endpoints served alongside MCP on the same process via `@mcp.custom_route()
 
 ## Demo
 
-### Live Dashboard Artifact
-
-Full portfolio dashboard generated from a single prompt on claude.ai — margin health, positions, P&L heatmap, sector concentration, and correlation matrix, all rendered as an interactive artifact.
-
-<iframe src="https://claude.site/public/artifacts/ee62368f-5175-4bc0-aea7-d4399ccaf7d4/embed" title="IBKR Portfolio Dashboard" width="100%" height="800" frameborder="0" allow="clipboard-write" allowfullscreen></iframe>
-
-### Screenshots
+**[Live Dashboard Artifact](https://claude.site/public/artifacts/ee62368f-5175-4bc0-aea7-d4399ccaf7d4)** — Full portfolio dashboard generated from a single prompt on claude.ai: margin health, positions, P&L heatmap, sector concentration, and correlation matrix.
 
 <img src="assets/demo-output.png" width="75%" />
 

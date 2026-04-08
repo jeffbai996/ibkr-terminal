@@ -79,6 +79,7 @@ class TestWhatIfSell:
         ib = make_mock_ib()
         order_state = make_order_state()
         order_state.initMarginChange = None
+        order_state.initMarginAfter = None
         ib.whatIfOrder.return_value = order_state
         ctx = make_ctx(ib=ib)
 
@@ -95,10 +96,14 @@ class TestWhatIfBuy:
     @pytest.mark.anyio
     async def test_margin_consumed(self):
         ib = make_mock_ib()
-        ib.whatIfOrder.return_value = make_order_state(
+        order_state = make_order_state(
             init_margin_change="200000",
             maint_margin_change="150000",
         )
+        # initMarginAfter must be consistent: acct_init(6M) + 200K = 6.2M
+        order_state.initMarginAfter = "6200000"
+        order_state.maintMarginAfter = "4650000"
+        ib.whatIfOrder.return_value = order_state
         ctx = make_ctx(ib=ib)
 
         result = await ibkr_what_if(
@@ -106,18 +111,20 @@ class TestWhatIfBuy:
         )
 
         assert "BUY 1,000 NVDA" in result
-        assert "$200,000.00 USD" in result
+        assert "$200,000.00 USD" in result  # init margin additional
 
     @pytest.mark.anyio
     async def test_margin_deficit_warning(self):
         """Buying so much that excess goes negative should trigger warning."""
         ib = make_mock_ib()
-        # init_change of 5M would push init from 6M to 11M,
-        # which exceeds 10M equity -> negative excess
-        ib.whatIfOrder.return_value = make_order_state(
+        order_state = make_order_state(
             init_margin_change="5000000",
             maint_margin_change="3750000",
         )
+        # acct_init(6M) + 5M = 11M; equity(10M) - 11M = -1M → deficit
+        order_state.initMarginAfter = "11000000"
+        order_state.maintMarginAfter = "8250000"
+        ib.whatIfOrder.return_value = order_state
         ctx = make_ctx(ib=ib)
 
         result = await ibkr_what_if(

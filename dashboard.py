@@ -115,7 +115,10 @@ def _get_ib(account: Optional[str] = None):
 
 def _get_accounts() -> list[str]:
     import server_http as sh
-    return list(sh._account_map.keys())
+    # Use _live_ctx since it's the authoritative source for tools; _account_map
+    # can briefly diverge if a reconnect loop rebinds the global name before
+    # calling _sync_live_ctx().
+    return list(sh._live_ctx.get("account_map", sh._account_map).keys())
 
 
 def _to_float(d: Optional[Decimal]) -> Optional[float]:

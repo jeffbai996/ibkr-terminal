@@ -105,20 +105,27 @@ async def _ensure_connected_and_ctx() -> _FakeContext:
     })
 
 
+def _sh():
+    """Return the live server_http module (__main__ when run as a script).
+
+    `import server_http` re-imports the file as a fresh module with all
+    globals reset — it does NOT return the already-running __main__ module.
+    Using sys.modules['__main__'] gives us the actual running instance.
+    """
+    import sys
+    return sys.modules["__main__"]
+
+
 def _get_ib(account: Optional[str] = None):
     """Get IB instance from module globals (non-async, for data routes)."""
-    import server_http as sh
+    sh = _sh()
     if account and account in sh._account_map:
         return sh._account_map[account]
     return sh._ib
 
 
 def _get_accounts() -> list[str]:
-    import server_http as sh
-    import logging
-    _log = logging.getLogger("ibkr_mcp.dashboard")
-    _log.info(f"_get_accounts: _ib={sh._ib}, _ib2={sh._ib2}, "
-              f"_account_map={sh._account_map}, _live_ctx_account_map={sh._live_ctx.get('account_map')}")
+    sh = _sh()
     accounts: list[str] = []
     if sh._ib is not None and sh._ib.isConnected():
         accounts.extend(sh._ib.managedAccounts())

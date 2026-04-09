@@ -115,6 +115,10 @@ def _get_ib(account: Optional[str] = None):
 
 def _get_accounts() -> list[str]:
     import server_http as sh
+    import logging
+    _log = logging.getLogger("ibkr_mcp.dashboard")
+    _log.info(f"_get_accounts: _ib={sh._ib}, _ib2={sh._ib2}, "
+              f"_account_map={sh._account_map}, _live_ctx_account_map={sh._live_ctx.get('account_map')}")
     accounts: list[str] = []
     if sh._ib is not None and sh._ib.isConnected():
         accounts.extend(sh._ib.managedAccounts())

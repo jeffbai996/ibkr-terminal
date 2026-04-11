@@ -140,6 +140,12 @@ def make_mock_ib(
     ib.accountSummary.return_value = make_summary() if summary is None else summary
     ib.portfolio.return_value = make_positions() if positions is None else positions
     ib.managedAccounts.return_value = [TEST_ACCOUNT] if accounts is None else accounts
+    ib.isConnected.return_value = True
+
+    # PnL subscription tracking — cancel guards check these dicts before
+    # calling cancel to avoid log spam from ib_insync.
+    ib.wrapper.pnlKey2ReqId = {(TEST_ACCOUNT, ""): 1}
+    ib.wrapper.pnlSingleKey2ReqId = {}
 
     # Async methods default to empty — override in tests
     ib.qualifyContractsAsync = AsyncMock(return_value=[Stock("TEST", "SMART", "USD")])

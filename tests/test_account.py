@@ -244,6 +244,10 @@ def _make_briefing_ib(
         pnl_singles.append(ps)
     ib.reqPnLSingle.side_effect = pnl_singles
 
+    # Populate PnL subscription tracking so cancel guards pass
+    for i, p in enumerate(pos):
+        ib.wrapper.pnlSingleKey2ReqId[(TEST_ACCOUNT, "", p.contract.conId)] = 100 + i
+
     # Open orders
     if with_orders:
         mock_trade = MagicMock()

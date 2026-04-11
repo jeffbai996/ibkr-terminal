@@ -246,6 +246,38 @@ async def _connect_ib2() -> tuple[IB | None, str]:
 _reconnect_task: asyncio.Task | None = None
 
 
+def _on_reconnect_task_done(task: asyncio.Task) -> None:
+    """Callback when the reconnect task exits — log why and restart it.
+
+    The reconnect loop should never exit. If it does, something went wrong
+    (CancelledError during shutdown, unhandled exception that slipped past
+    the catch-all). Log the cause and restart unless we're shutting down.
+    """
+    global _reconnect_task
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        logger.info("Reconnect loop cancelled (shutdown).")
+        return
+
+    if exc:
+        logger.error(f"Reconnect loop died with exception: {exc}", exc_info=exc)
+    else:
+        logger.warning("Reconnect loop exited unexpectedly (no exception).")
+
+    # Restart the loop — get the running loop safely
+    try:
+        loop = asyncio.get_running_loop()
+        _reconnect_task = loop.create_task(
+            _background_reconnect_loop(),
+            name="ibkr_reconnect",
+        )
+        _reconnect_task.add_done_callback(_on_reconnect_task_done)
+        logger.info("Reconnect loop restarted.")
+    except RuntimeError:
+        logger.error("Cannot restart reconnect loop — no running event loop.")
+
+
 async def _background_reconnect_loop() -> NoReturn:
     """Periodically try to reconnect to IB Gateway(s) when offline.
 
@@ -271,6 +303,15 @@ async def _background_reconnect_loop() -> NoReturn:
             not IB_PORT_2
             or (_ib2 is not None and _ib2.isConnected() and _health2.connected)
         )
+
+        # Periodic cache eviction (piggybacks on this loop's 30s tick)
+        try:
+            from core.cache import cache_evict
+            evicted = cache_evict()
+            if evicted:
+                logger.debug(f"Cache eviction: removed {evicted} expired entries")
+        except Exception:
+            pass
 
         if primary_ok and secondary_ok:
             continue
@@ -334,6 +375,7 @@ async def http_lifespan(server: FastMCP) -> AsyncIterator[dict]:
             _background_reconnect_loop(),
             name="ibkr_reconnect",
         )
+        _reconnect_task.add_done_callback(_on_reconnect_task_done)
 
     # No lock, no connect attempt. Just sync and yield current state.
     _sync_live_ctx()
@@ -442,6 +484,14 @@ if __name__ == "__main__":
 
     import atexit
     atexit.register(_shutdown_ib)
+
+    # SIGTERM handler — ensures clean IB disconnect when killed by process manager
+    def _handle_sigterm(signum, frame):
+        logger.info("Received SIGTERM — shutting down cleanly.")
+        _shutdown_ib()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
 
     def _free_port(port: int) -> None:
         """Kill any process holding port before we try to bind it."""

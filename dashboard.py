@@ -70,7 +70,7 @@ async def _ensure_connected_and_ctx() -> _FakeContext:
     hit before the first MCP session). Uses the same lock and globals
     as server_http.py's http_lifespan.
     """
-    import server_http as sh
+    sh = _sh()  # Use __main__ module, not a re-import
 
     async with sh._ib_lock:
         needs_connect = (
@@ -274,6 +274,13 @@ async def api_positions(request: Request) -> JSONResponse:
 
 def _fetch_yahoo_quote(symbol: str) -> dict:
     now = time.time()
+
+    # Evict stale entries on read (keeps cache bounded over long-running sessions)
+    if len(_price_cache) > 100:
+        stale = [k for k, (_, ts) in _price_cache.items() if now - ts > YAHOO_CACHE_TTL * 10]
+        for k in stale:
+            del _price_cache[k]
+
     cached = _price_cache.get(symbol)
     if cached and (now - cached[1]) < YAHOO_CACHE_TTL:
         return cached[0]

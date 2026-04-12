@@ -11,3 +11,6 @@ build/
 .pytest_cache/
 .DS_Store
 *.db
+logs/
+CLAUDE.md
+.internal/

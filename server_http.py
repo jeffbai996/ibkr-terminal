@@ -313,6 +313,33 @@ async def _background_reconnect_loop() -> NoReturn:
         except Exception:
             pass
 
+        # Heartbeat: ping connections that appear OK to catch silent TCP drops.
+        # WSL/Hyper-V drops idle TCP sessions without sending a disconnect event,
+        # so isConnected() stays True while the socket is dead. reqCurrentTimeAsync
+        # forces a round-trip — if it times out, we force-disconnect so the
+        # reconnect block below picks it up immediately.
+        if primary_ok:
+            try:
+                await asyncio.wait_for(_ib.reqCurrentTimeAsync(), timeout=5.0)
+            except Exception:
+                logger.warning("Primary heartbeat timed out — forcing reconnect")
+                try:
+                    _ib.disconnect()
+                except Exception:
+                    pass
+                primary_ok = False
+
+        if secondary_ok and IB_PORT_2:
+            try:
+                await asyncio.wait_for(_ib2.reqCurrentTimeAsync(), timeout=5.0)
+            except Exception:
+                logger.warning("Secondary heartbeat timed out — forcing reconnect")
+                try:
+                    _ib2.disconnect()
+                except Exception:
+                    pass
+                secondary_ok = False
+
         if primary_ok and secondary_ok:
             continue
 
@@ -494,10 +521,18 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, _handle_sigterm)
 
     def _free_port(port: int) -> None:
-        """Kill any process holding port before we try to bind it."""
+        """Kill any process LISTENING on port before we try to bind it.
+
+        IMPORTANT: Only targets the listening socket, not established client
+        connections. The old version used `lsof -ti :PORT` which returns ALL
+        pids (listeners + clients), which would SIGTERM Claude Code sessions
+        that were connected as MCP clients.
+        """
         try:
+            # -sTCP:LISTEN restricts to listening sockets only — won't catch
+            # Claude Code or other clients with established connections
             result = subprocess.run(
-                ["lsof", "-ti", f":{port}"],
+                ["lsof", "-ti", f":{port}", "-sTCP:LISTEN"],
                 capture_output=True, text=True,
             )
             pids = [p.strip() for p in result.stdout.splitlines() if p.strip()]
@@ -509,14 +544,14 @@ if __name__ == "__main__":
                     continue
                 try:
                     os.kill(int(pid), signal.SIGTERM)
-                    logger.info("Sent SIGTERM to pid %s holding port %d", pid, port)
+                    logger.info("Sent SIGTERM to pid %s listening on port %d", pid, port)
                 except ProcessLookupError:
                     pass
             # Give processes a moment to exit cleanly
             time.sleep(0.5)
             # SIGKILL anything still alive
             result2 = subprocess.run(
-                ["lsof", "-ti", f":{port}"],
+                ["lsof", "-ti", f":{port}", "-sTCP:LISTEN"],
                 capture_output=True, text=True,
             )
             for pid in [p.strip() for p in result2.stdout.splitlines() if p.strip()]:

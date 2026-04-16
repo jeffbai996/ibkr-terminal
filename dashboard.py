@@ -417,7 +417,46 @@ async def api_status(request: Request) -> JSONResponse:
 
 @mcp.custom_route("/api/health", methods=["GET"])
 async def api_health(request: Request) -> JSONResponse:
-    return JSONResponse({"status": "ok", "accounts": _get_accounts()})
+    sh = _sh()
+    accounts = _get_accounts()
+
+    # Check actual liveness — isConnected() can lie after silent TCP drops
+    primary_live = (
+        sh._ib is not None
+        and sh._ib.isConnected()
+        and sh._health.connected
+    )
+    secondary_live = (
+        sh._ib2 is not None
+        and sh._ib2.isConnected()
+        and sh._health2.connected
+    ) if sh.IB_PORT_2 else None  # None = not configured
+
+    # Staleness: how long since last real data from IB
+    primary_stale_s = (
+        round(time.time() - sh._health.last_data_time, 1)
+        if sh._health.last_data_time > 0 else None
+    )
+    secondary_stale_s = (
+        round(time.time() - sh._health2.last_data_time, 1)
+        if sh._health2.last_data_time > 0 else None
+    ) if sh.IB_PORT_2 else None
+
+    # Overall status: degraded if any configured gateway is down
+    if not accounts:
+        status = "offline"
+    elif (not primary_live) or (sh.IB_PORT_2 and not secondary_live):
+        status = "degraded"
+    else:
+        status = "ok"
+
+    return JSONResponse({
+        "status": status,
+        "accounts": accounts,
+        "primary": {"connected": primary_live, "last_data_age_s": primary_stale_s},
+        "secondary": {"connected": secondary_live, "last_data_age_s": secondary_stale_s}
+            if sh.IB_PORT_2 else None,
+    })
 
 
 # ── Claude API Passthrough (Query tab only) ──────────────────────────

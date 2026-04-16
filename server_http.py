@@ -514,7 +514,11 @@ if __name__ == "__main__":
 
     # SIGTERM handler — ensures clean IB disconnect when killed by process manager
     def _handle_sigterm(signum, frame):
+        global _reconnect_task
         logger.info("Received SIGTERM — shutting down cleanly.")
+        # Cancel reconnect loop first so it doesn't block shutdown
+        if _reconnect_task and not _reconnect_task.done():
+            _reconnect_task.cancel()
         _shutdown_ib()
         sys.exit(0)
 

@@ -355,6 +355,13 @@ async def _background_reconnect_loop() -> NoReturn:
                             _account_map[acc] = _ib
                             _health_map[acc] = _health
                         _sync_live_ctx()
+                        # Prime account summary — see secondary block below
+                        # for rationale.
+                        try:
+                            await _ib.accountSummaryAsync()
+                            logger.info("Primary: account summary primed")
+                        except Exception as prime_err:
+                            logger.warning(f"Primary: accountSummary prime failed: {prime_err}")
                         logger.info("Background reconnect: primary gateway restored")
                     except Exception as e:
                         logger.warning(f"Background reconnect (primary) failed: {e}")
@@ -370,6 +377,19 @@ async def _background_reconnect_loop() -> NoReturn:
                                 _account_map[acc] = _ib2
                                 _health_map[acc] = _health2
                             _sync_live_ctx()
+                            # Prime account summary + portfolio subscriptions.
+                            # ib_insync's sync accountSummary() triggers
+                            # reqAccountSummaryAsync on demand, but if the
+                            # first dashboard hit lands before the subscription
+                            # snapshot finishes, it can see empty results and
+                            # "No summary available" leaks out. Priming here
+                            # guarantees the wrapper's acctSummary dict is
+                            # populated before any tool call.
+                            try:
+                                await _ib2.accountSummaryAsync()
+                                logger.info("Secondary: account summary primed")
+                            except Exception as prime_err:
+                                logger.warning(f"Secondary: accountSummary prime failed: {prime_err}")
                             logger.info("Background reconnect: secondary gateway restored")
                     except Exception as e:
                         logger.warning(f"Background reconnect (secondary) failed: {e}")
